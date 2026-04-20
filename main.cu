@@ -1,69 +1,90 @@
 #include <cstdio>
+#include <memory>
 
-__global__ void my_kernel_1() {
-    __shared__ int array[1024]; // this goes in a single SM, which a single block goes on.
+__global__ void trivial() {}
 
-    int &slot = array[threadIdx.x];
+__global__ void my_kernel_1(int *output) {
+  volatile int y = 0;
 
-    int y = 10;
-
-    if (threadIdx.x % 31 == 1) {
-        slot = 2 * y;
-    } else {
-        slot = 3 * y;
+  if (threadIdx.x % 16 == 0) {
+    for (int i = 0; i < 100000; i++) {
+      y = y + threadIdx.x * i * 2;
     }
+  } else {
+    for (int i = 0; i < 100000; i++) {
+      y = y + threadIdx.x * i * 3;
+    }
+  }
+
+  output[threadIdx.x] = y;
 }
 
-__global__ void my_kernel_2() {
-    __shared__ int array[1024]; // this goes in a single SM, which a single block goes on.
+__global__ void my_kernel_2(int *output) {
+  volatile int y = 10;
 
-    int &slot = array[threadIdx.x];
+  for (int i = 0; i < 100000; i++) {
+    y = y + threadIdx.x * i * 2;
+  }
 
-    int y = 10;
-
-    if (threadIdx.x % 31 == 1) {
-        slot = 2 * y;
-    } else {
-        slot = 3 * y;
-    }
+  output[threadIdx.x] = y;
 }
 
+struct Result {
+  float ms;
+  int output[1024];
+};
+
+std::unique_ptr<Result> timeit(void (*kernel)(int *)) {
+  auto result = std::make_unique<Result>();
+  int *device_output;
+  cudaMalloc(&device_output, 1024 * sizeof(int));
+
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+
+  cudaEventRecord(start);
+  kernel<<<1, 1024>>>(device_output);
+  cudaEventRecord(stop);
+
+  cudaEventSynchronize(stop);
+
+  cudaEventElapsedTime(&result->ms, start, stop);
+
+  cudaEventDestroy(start);
+  cudaEventDestroy(stop);
+
+  cudaMemcpy(result->output, device_output, 1024 * sizeof(int),
+             cudaMemcpyDeviceToHost);
+
+  return result;
+}
 
 int main() {
-    cudaEvent_t start;
-    cudaEvent_t stop;
+  trivial<<<1, 1>>>();
 
-    float ms;
+  std::unique_ptr<Result> result_1;
+  std::unique_ptr<Result> result_2;
 
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+  result_1 = timeit(my_kernel_1);
+  result_2 = timeit(my_kernel_2);
 
-    // === KERNEL 1 ===
+  printf("my_kernel_1/my_kernel_2 = %f\n", result_1->ms / result_2->ms);
 
-    cudaEventRecord(start); // put an event into the default stream
-    my_kernel_1<<<16, 1024>>>(); // put this kernel into the default stream
-    cudaEventRecord(stop); // put another event into the default stream
+  result_2 = timeit(my_kernel_2);
+  result_1 = timeit(my_kernel_1);
 
-    cudaEventSynchronize(stop); // wait until the stop event has passed
+  printf("my_kernel_1/my_kernel_2 = %f\n", result_1->ms / result_2->ms);
 
-    cudaEventElapsedTime(&ms, start, stop);
-    printf("kernel completed in %fms.\n", ms);
+  result_2 = timeit(my_kernel_2);
+  result_1 = timeit(my_kernel_1);
 
-    // === KERNEL 2 ===
+  printf("my_kernel_1/my_kernel_2 = %f\n", result_1->ms / result_2->ms);
 
-    cudaEventRecord(start);
-    my_kernel_2<<<16, 1024>>>();
-    cudaEventRecord(stop);
+  result_1 = timeit(my_kernel_1);
+  result_2 = timeit(my_kernel_2);
 
-    cudaEventSynchronize(stop); // wait until the stop event has passed
+  printf("my_kernel_1/my_kernel_2 = %f\n", result_1->ms / result_2->ms);
 
-    cudaEventElapsedTime(&ms, start, stop);
-    printf("kernel completed in %fms.\n", ms);
-    
-    // === DESTROY THE EVENTS??? WTF EVEN DOES THIS MEAN? ===
-
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return 0;
+  return 0;
 }

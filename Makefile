@@ -1,3 +1,3 @@
 
 main: main.cu
-	nvcc -o $@ $^
+	nvcc -std=c++20 -o $@ $^
