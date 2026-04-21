@@ -4,15 +4,15 @@
 __global__ void trivial() {}
 
 __global__ void my_kernel_1(int *output) {
-  volatile int y = 0;
+  int y = 0;
 
   if (threadIdx.x % 16 == 0) {
     for (int i = 0; i < 100000; i++) {
-      y = y + threadIdx.x * i * 2;
+      y = y * threadIdx.x + i + 2;
     }
   } else {
     for (int i = 0; i < 100000; i++) {
-      y = y + threadIdx.x * i * 3;
+      y = y * threadIdx.x + i + 3;
     }
   }
 
@@ -20,10 +20,14 @@ __global__ void my_kernel_1(int *output) {
 }
 
 __global__ void my_kernel_2(int *output) {
-  volatile int y = 10;
+  int y = 0;
 
   for (int i = 0; i < 100000; i++) {
-    y = y + threadIdx.x * i * 2;
+    if (threadIdx.x % 16 == 0) {
+      y = y + threadIdx.x * i * 2;
+    } else {
+      y = y + threadIdx.x * i * 3;
+    }
   }
 
   output[threadIdx.x] = y;
@@ -66,25 +70,14 @@ int main() {
   std::unique_ptr<Result> result_1;
   std::unique_ptr<Result> result_2;
 
-  result_1 = timeit(my_kernel_1);
-  result_2 = timeit(my_kernel_2);
+  for (int i = 0; i < 10; i++) {
+    result_1 = timeit(my_kernel_1);
+    result_2 = timeit(my_kernel_2);
 
-  printf("my_kernel_1/my_kernel_2 = %f\n", result_1->ms / result_2->ms);
-
-  result_2 = timeit(my_kernel_2);
-  result_1 = timeit(my_kernel_1);
-
-  printf("my_kernel_1/my_kernel_2 = %f\n", result_1->ms / result_2->ms);
-
-  result_2 = timeit(my_kernel_2);
-  result_1 = timeit(my_kernel_1);
-
-  printf("my_kernel_1/my_kernel_2 = %f\n", result_1->ms / result_2->ms);
-
-  result_1 = timeit(my_kernel_1);
-  result_2 = timeit(my_kernel_2);
-
-  printf("my_kernel_1/my_kernel_2 = %f\n", result_1->ms / result_2->ms);
+    printf("my_kernel_1: %fms\n", result_1->ms);
+    printf("my_kernel_2: %fms\n", result_2->ms);
+    printf("my_kernel_1/my_kernel_2 = %f\n", result_1->ms / result_2->ms);
+  }
 
   return 0;
 }
